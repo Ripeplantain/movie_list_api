@@ -4,8 +4,10 @@ from watchlist.api.serializers import WatchListSerializer, StreamPlatformSeriali
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import api_view
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework import status, generics
+from watchlist.api.permissions import ReviewUserorReadOnly
 
 # Create your views here.
 
@@ -13,6 +15,7 @@ from rest_framework import status, generics
 class CreateReviewAV(generics.CreateAPIView):
 
     serializer_class = ReviewSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         return Review.objects.all()
@@ -20,18 +23,27 @@ class CreateReviewAV(generics.CreateAPIView):
     def perform_create(self, serializer):
 
         pk = self.kwargs.get('pk')
-        movie = WatchList.objects.get(pk=pk)
+        watchlist = WatchList.objects.get(pk=pk)
 
-        review_queryset = Review.objects.filter(watchlist=movie, review_user=self.request.user)
+        review_queryset = Review.objects.filter(watchlist=watchlist, review_user=self.request.user)
 
         if review_queryset.exists():
-            raise ValidationError("You have already reviewed this movie!")
+            raise ValidationError("You have already reviewed this watchlist!")
+        
+        if watchlist.average_rating == 0:
+            watchlist.average_rating = serializer.validated_data.get('rating')
+        else:
+            watchlist.average_rating = (watchlist.average_rating + serializer.validated_data.get('rating')) / 2
+        
+        watchlist.total_rating += 1     
+        watchlist.save()
 
-        serializer.save(watchlist=movie)
+        serializer.save( watchlist=watchlist, review_user=self.request.user)
 
 class ListReviewAV(generics.ListAPIView):
 
     serializer_class = ReviewSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         pk = self.kwargs['pk']
@@ -42,10 +54,13 @@ class ReviewDetailAV(generics.RetrieveUpdateDestroyAPIView):
 
     queryset = Review.objects.all()
     serializer_class = ReviewSerializer
+    permission_classes = [IsAuthenticated, ReviewUserorReadOnly]
 
 
 
 class StreamPlatformAV(APIView):
+
+    permission_classes = [IsAuthenticated]
 
     def get(self,request):
         platform = StreamPlatform.objects.all()
@@ -63,6 +78,8 @@ class StreamPlatformAV(APIView):
 
 
 class StreamPlatformListAV(APIView):
+
+    permission_classes = [IsAuthenticated]
 
     def get(self,request,pk):
         platform = StreamPlatform.objects.get(pk=pk)
